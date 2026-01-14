@@ -1,0 +1,456 @@
+import java.io.*;
+import java.util.*;
+import java.util.regex.Pattern;
+
+/* Custom Exception for Validation */
+class ValidationException extends Exception {
+    public ValidationException(String message) {
+        super(message);
+    }
+}
+
+/* Employee Class */
+class Employee {
+    private String empId;
+    private String name;
+    private String department;
+    private double salary;
+
+    public Employee(String empId, String name, String department, double salary) {
+        this.empId = empId;
+        this.name = name;
+        this.department = department;
+        this.salary = salary;
+    }
+
+    public String getEmpId() {
+        return empId;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getDepartment() {
+        return department;
+    }
+
+    public double getSalary() {
+        return salary;
+    }
+
+    public void setSalary(double salary) {
+        this.salary = salary;
+    }
+
+    @Override
+    public String toString() {
+        return "EmployeeID=" + empId +
+                ", Name=" + name +
+                ", Department=" + department +
+                ", Salary=" + salary;
+    }
+
+    /* Convert to File Format */
+    public String toFileString() {
+        return empId + "," + name + "," + department + "," + salary;
+    }
+
+    /* Convert from File Format */
+    public static Employee fromFileString(String line) throws ValidationException {
+        try {
+            String[] parts = line.split(",");
+            if (parts.length != 4) {
+                throw new ValidationException("Corrupted record found in file: " + line);
+            }
+
+            String id = parts[0].trim();
+            String name = parts[1].trim();
+            String dept = parts[2].trim();
+            double salary = Double.parseDouble(parts[3].trim());
+
+            return new Employee(id, name, dept, salary);
+
+        } catch (NumberFormatException e) {
+            throw new ValidationException("Invalid salary value in file record: " + line);
+        }
+    }
+}
+
+/* Interface */
+interface EmployeeOperations {
+    void addEmployee(Employee e) throws ValidationException;
+    void displayAllEmployees();
+    void searchEmployeeById(String empId);
+    void updateEmployeeSalary(String empId, double newSalary) throws ValidationException;
+    void deleteEmployee(String empId);
+    void displaySortedEmployees();
+    void displayDepartments();
+}
+
+/* Employee Manager Class */
+class EmployeeManager implements EmployeeOperations {
+
+    private Map<String, Employee> employeeMap = new HashMap<>();
+    private Set<String> departmentSet = new HashSet<>();
+
+    private final String FILE_NAME = "employees.txt";
+
+    // REGEX for Employee ID: EMP101, EMP999
+    private static final String EMP_ID_REGEX = "^EMP\\d{3}$";
+    private static final Pattern pattern = Pattern.compile(EMP_ID_REGEX);
+
+    public EmployeeManager() {
+        loadFromFile();
+    }
+
+    private boolean isValidEmpId(String empId) {
+        return empId != null && pattern.matcher(empId).matches();
+    }
+
+    private void validateEmployee(Employee e) throws ValidationException {
+        if (e == null) {
+            throw new ValidationException("Employee object cannot be null.");
+        }
+
+        if (!isValidEmpId(e.getEmpId())) {
+            throw new ValidationException("Invalid Employee ID format. Use EMP### (Example: EMP101).");
+        }
+
+        if (employeeMap.containsKey(e.getEmpId())) {
+            throw new ValidationException("Employee ID must be unique. This ID already exists.");
+        }
+
+        if (e.getSalary() <= 0) {
+            throw new ValidationException("Salary must be positive.");
+        }
+
+        if (e.getDepartment() == null || e.getDepartment().trim().isEmpty()) {
+            throw new ValidationException("Department cannot be empty.");
+        }
+    }
+
+    private void updateDepartmentSet() {
+        departmentSet.clear();
+        for (Employee e : employeeMap.values()) {
+            if (e.getDepartment() != null && !e.getDepartment().trim().isEmpty()) {
+                departmentSet.add(e.getDepartment().trim());
+            }
+        }
+    }
+
+    /* Load data from file */
+    private void loadFromFile() {
+        File file = new File(FILE_NAME);
+
+        if (!file.exists()) {
+            return;
+        }
+
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            String line;
+
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+
+                try {
+                    Employee e = Employee.fromFileString(line);
+
+                    // If duplicate IDs exist in file, last one will overwrite
+                    employeeMap.put(e.getEmpId(), e);
+
+                } catch (ValidationException ex) {
+                    System.out.println("File Warning: " + ex.getMessage());
+                }
+            }
+
+            updateDepartmentSet();
+
+        } catch (IOException e) {
+            System.out.println("Error reading file: " + e.getMessage());
+        }
+    }
+
+    /* Save data to file after every change */
+    private void saveToFile() {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(FILE_NAME))) {
+            for (Employee e : employeeMap.values()) {
+                bw.write(e.toFileString());
+                bw.newLine();
+            }
+        } catch (IOException e) {
+            System.out.println("Error writing to file: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void addEmployee(Employee e) throws ValidationException {
+        validateEmployee(e);
+
+        employeeMap.put(e.getEmpId(), e);
+        updateDepartmentSet();
+        saveToFile();
+    }
+
+    @Override
+    public void displayAllEmployees() {
+        if (employeeMap.isEmpty()) {
+            System.out.println("No employee records found.");
+            return;
+        }
+
+        System.out.println("\nAll Employees:");
+        for (Employee e : employeeMap.values()) {
+            System.out.println(e);
+        }
+    }
+
+    @Override
+    public void searchEmployeeById(String empId) {
+        if (!isValidEmpId(empId)) {
+            System.out.println("Invalid Employee ID format. Use EMP###.");
+            return;
+        }
+
+        Employee e = employeeMap.get(empId);
+        if (e != null) {
+            System.out.println("Employee Found: " + e);
+        } else {
+            System.out.println("Employee not found for ID: " + empId);
+        }
+    }
+
+    @Override
+    public void updateEmployeeSalary(String empId, double newSalary) throws ValidationException {
+        if (!isValidEmpId(empId)) {
+            throw new ValidationException("Invalid Employee ID format. Use EMP###.");
+        }
+
+        if (newSalary <= 0) {
+            throw new ValidationException("Salary must be positive.");
+        }
+
+        Employee e = employeeMap.get(empId);
+        if (e == null) {
+            throw new ValidationException("Employee not found for ID: " + empId);
+        }
+
+        e.setSalary(newSalary);
+        saveToFile();
+    }
+
+    @Override
+    public void deleteEmployee(String empId) {
+        if (!isValidEmpId(empId)) {
+            System.out.println("Invalid Employee ID format. Use EMP###.");
+            return;
+        }
+
+        Employee removed = employeeMap.remove(empId);
+
+        if (removed != null) {
+            updateDepartmentSet();
+            saveToFile();
+            System.out.println("Employee deleted successfully.");
+        } else {
+            System.out.println("Employee not found for deletion: " + empId);
+        }
+    }
+
+    @Override
+    public void displaySortedEmployees() {
+        if (employeeMap.isEmpty()) {
+            System.out.println("No employees available to sort.");
+            return;
+        }
+
+        List<Employee> sortedList = new ArrayList<>(employeeMap.values());
+
+        // Sort by salary (Descending). You can change to ID sorting if needed.
+        sortedList.sort((a, b) -> Double.compare(b.getSalary(), a.getSalary()));
+
+        System.out.println("\nEmployees Sorted by Salary (Descending):");
+        for (Employee e : sortedList) {
+            System.out.println(e);
+        }
+    }
+
+    @Override
+    public void displayDepartments() {
+        if (departmentSet.isEmpty()) {
+            System.out.println("No departments found.");
+            return;
+        }
+
+        System.out.println("\nDepartments:");
+        for (String dept : departmentSet) {
+            System.out.println(dept);
+        }
+    }
+}
+
+/* Login System Class */
+class LoginSystem {
+
+    // You can change these credentials
+    private static final String USERNAME = "admin";
+    private static final String PASSWORD = "admin123";
+
+    public boolean login(Scanner sc) {
+        System.out.println("----- Login -----");
+        System.out.print("Enter Username: ");
+        String user = sc.nextLine();
+
+        System.out.print("Enter Password: ");
+        String pass = sc.nextLine();
+
+        if (USERNAME.equals(user) && PASSWORD.equals(pass)) {
+            System.out.println("Login successful.\n");
+            return true;
+        } else {
+            System.out.println("Invalid username or password.");
+            return false;
+        }
+    }
+}
+
+/* Main Class */
+public class EmployeeManagementSystem {
+
+    public static void main(String[] args) {
+
+        Scanner sc = new Scanner(System.in);
+
+        LoginSystem loginSystem = new LoginSystem();
+        int attempts = 3;
+        boolean loggedIn = false;
+
+        while (attempts > 0) {
+            if (loginSystem.login(sc)) {
+                loggedIn = true;
+                break;
+            } else {
+                attempts--;
+                System.out.println("Attempts left: " + attempts);
+            }
+        }
+
+        if (!loggedIn) {
+            System.out.println("Too many failed attempts. Exiting program.");
+            sc.close();
+            return;
+        }
+
+        EmployeeManager manager = new EmployeeManager();
+
+        while (true) {
+            System.out.println("=================================");
+            System.out.println(" Employee Management System Menu ");
+            System.out.println("=================================");
+            System.out.println("1. Add Employee");
+            System.out.println("2. Display All Employees");
+            System.out.println("3. Search Employee by ID");
+            System.out.println("4. Update Employee Salary");
+            System.out.println("5. Delete Employee");
+            System.out.println("6. Display Sorted Employees");
+            System.out.println("7. Display Departments");
+            System.out.println("8. Exit");
+            System.out.print("Enter your choice: ");
+
+            int choice;
+            try {
+                choice = sc.nextInt();
+                sc.nextLine();
+            } catch (InputMismatchException e) {
+                System.out.println("Invalid input. Please enter a number.");
+                sc.nextLine();
+                continue;
+            }
+
+            switch (choice) {
+                case 1:
+                    try {
+                        System.out.print("Enter Employee ID (Format EMP###): ");
+                        String id = sc.nextLine();
+
+                        System.out.print("Enter Name: ");
+                        String name = sc.nextLine();
+
+                        System.out.print("Enter Department: ");
+                        String dept = sc.nextLine();
+
+                        System.out.print("Enter Salary: ");
+                        double salary = sc.nextDouble();
+                        sc.nextLine();
+
+                        Employee e = new Employee(id, name, dept, salary);
+                        manager.addEmployee(e);
+
+                        System.out.println("Employee added successfully.");
+
+                    } catch (InputMismatchException ex) {
+                        System.out.println("Salary must be a valid number.");
+                        sc.nextLine();
+                    } catch (ValidationException ex) {
+                        System.out.println("Validation Error: " + ex.getMessage());
+                    } catch (Exception ex) {
+                        System.out.println("Unexpected Error: " + ex.getMessage());
+                    }
+                    break;
+
+                case 2:
+                    manager.displayAllEmployees();
+                    break;
+
+                case 3:
+                    System.out.print("Enter Employee ID to Search: ");
+                    String searchId = sc.nextLine();
+                    manager.searchEmployeeById(searchId);
+                    break;
+
+                case 4:
+                    try {
+                        System.out.print("Enter Employee ID: ");
+                        String updateId = sc.nextLine();
+
+                        System.out.print("Enter New Salary: ");
+                        double newSalary = sc.nextDouble();
+                        sc.nextLine();
+
+                        manager.updateEmployeeSalary(updateId, newSalary);
+                        System.out.println("Employee salary updated successfully.");
+
+                    } catch (InputMismatchException ex) {
+                        System.out.println("Salary must be a valid number.");
+                        sc.nextLine();
+                    } catch (ValidationException ex) {
+                        System.out.println("Validation Error: " + ex.getMessage());
+                    }
+                    break;
+
+                case 5:
+                    System.out.print("Enter Employee ID to Delete: ");
+                    String deleteId = sc.nextLine();
+                    manager.deleteEmployee(deleteId);
+                    break;
+
+                case 6:
+                    manager.displaySortedEmployees();
+                    break;
+
+                case 7:
+                    manager.displayDepartments();
+                    break;
+
+                case 8:
+                    System.out.println("Exiting program.");
+                    sc.close();
+                    return;
+
+                default:
+                    System.out.println("Invalid choice. Try again.");
+            }
+        }
+    }
+}
