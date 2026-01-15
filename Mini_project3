@@ -1,0 +1,397 @@
+import java.sql.*;
+import java.util.Scanner;
+
+public class StudentMiniProject {
+
+    private static final String URL = "jdbc:mysql://localhost:3306/college_db";
+    private static final String USER = "root";
+    private static final String PASS = "root";
+    private static final String LOGIN_USER = "admin";
+    private static final String LOGIN_PASS = "1234";
+
+    public static void main(String[] args) {
+
+        Scanner sc = new Scanner(System.in);
+
+        System.out.println("=====================================");
+        System.out.println("     STUDENT MANAGEMENT SYSTEM");
+        System.out.println("=====================================\n");
+
+        // 1) Login System
+        if (!login(sc)) {
+            System.out.println("Too many wrong attempts. Exiting...");
+            return;
+        }
+
+        // 2) Create table if not exists
+        createTableIfNotExists();
+
+        // 3) Menu
+        while (true) {
+            System.out.println("\n----------- MENU -----------");
+            System.out.println("1. Add Students");
+            System.out.println("2. Display All Students");
+            System.out.println("3. Search Students by Eno");
+            System.out.println("4. Update Students Branch");
+            System.out.println("5. Delete Students by Eno");
+            System.out.println("6. Display Sorted Students");
+            System.out.println("7. Exit");
+            System.out.print("Enter choice: ");
+
+            int choice;
+            try {
+                choice = Integer.parseInt(sc.nextLine());
+            } catch (Exception e) {
+                System.out.println("Invalid input. Please enter a number between 1 to 7.");
+                continue;
+            }
+
+            switch (choice) {
+                case 1:
+                    addStudent(sc);
+                    break;
+                case 2:
+                    displayAllStudents();
+                    break;
+                case 3:
+                    searchStudentByEno(sc);
+                    break;
+                case 4:
+                    updateStudentBranch(sc);
+                    break;
+                case 5:
+                    deleteStudentByEno(sc);
+                    break;
+                case 6:
+                    displaySortedStudents(sc);
+                    break;
+                case 7:
+                    System.out.println("Thanks! Program ended.");
+                    return;
+                default:
+                    System.out.println("Wrong choice. Try again.");
+            }
+        }
+    }
+    private static boolean login(Scanner sc) {
+        int attempts = 3;
+
+        while (attempts > 0) {
+            System.out.print("Enter Username: ");
+            String u = sc.nextLine().trim();
+
+            System.out.print("Enter Password: ");
+            String p = sc.nextLine().trim();
+
+            if (u.equals(LOGIN_USER) && p.equals(LOGIN_PASS)) {
+                System.out.println("\nLogin Successful! Welcome " + u + " 😊");
+                return true;
+            } else {
+                attempts--;
+                System.out.println("Invalid Username/Password. Attempts left: " + attempts);
+            }
+        }
+        return false;
+    }
+    private static Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(URL, USER, PASS);
+    }
+
+    private static void createTableIfNotExists() {
+        String query = "CREATE TABLE IF NOT EXISTS Students (" +
+                "eno INT PRIMARY KEY, " +
+                "name VARCHAR(50) NOT NULL, " +
+                "branch VARCHAR(20) NOT NULL, " +
+                "sem INT NOT NULL, " +
+                "percentage DOUBLE NOT NULL" +
+                ")";
+
+        try (Connection con = getConnection();
+             Statement st = con.createStatement()) {
+
+            st.executeUpdate(query);
+            System.out.println("Database ready (Students table checked).");
+
+        } catch (Exception e) {
+            System.out.println("Error while creating table: " + e.getMessage());
+        }
+    }
+    private static void validateBranch(String branch) throws InvalidInputException {
+        if (branch == null || branch.trim().isEmpty()) {
+            throw new InvalidInputException("Branch cannot be empty.");
+        }
+    }
+
+    private static void validateSem(int sem) throws InvalidInputException {
+        if (sem <= 0) {
+            throw new InvalidInputException("Semester must be a positive number.");
+        }
+    }
+
+    private static void validatePercentage(double per) throws InvalidInputException {
+        if (per <= 0) {
+            throw new InvalidInputException("Percentage must be positive.");
+        }
+    }
+
+    private static boolean isEnoExists(int eno) {
+        String query = "SELECT eno FROM Students WHERE eno = ?";
+
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(query)) {
+
+            ps.setInt(1, eno);
+            ResultSet rs = ps.executeQuery();
+            return rs.next();
+
+        } catch (Exception e) {
+            System.out.println("Error checking Eno: " + e.getMessage());
+            return false;
+        }
+    }
+    private static void addStudent(Scanner sc) {
+        try {
+            System.out.print("Enter Eno: ");
+            int eno = Integer.parseInt(sc.nextLine());
+
+            if (isEnoExists(eno)) {
+                throw new InvalidInputException("Eno already exists! Please use a unique Eno.");
+            }
+
+            System.out.print("Enter Name: ");
+            String name = sc.nextLine().trim();
+
+            System.out.print("Enter Branch: ");
+            String branch = sc.nextLine().trim();
+            validateBranch(branch);
+
+            System.out.print("Enter Semester: ");
+            int sem = Integer.parseInt(sc.nextLine());
+            validateSem(sem);
+
+            System.out.print("Enter Percentage: ");
+            double per = Double.parseDouble(sc.nextLine());
+            validatePercentage(per);
+
+            String insertQuery = "INSERT INTO Students(eno, name, branch, sem, percentage) VALUES (?, ?, ?, ?, ?)";
+
+            try (Connection con = getConnection();
+                 PreparedStatement ps = con.prepareStatement(insertQuery)) {
+
+                ps.setInt(1, eno);
+                ps.setString(2, name);
+                ps.setString(3, branch);
+                ps.setInt(4, sem);
+                ps.setDouble(5, per);
+
+                int rows = ps.executeUpdate();
+                if (rows > 0) {
+                    System.out.println("Student added successfully!");
+                } else {
+                    System.out.println("Student not added. Try again.");
+                }
+            }
+
+        } catch (InvalidInputException ex) {
+            System.out.println("Validation Error: " + ex.getMessage());
+        } catch (NumberFormatException ex) {
+            System.out.println("Invalid number format. Please enter correct numeric values.");
+        } catch (Exception ex) {
+            System.out.println("Something went wrong: " + ex.getMessage());
+        }
+    }
+
+    private static void displayAllStudents() {
+        String query = "SELECT * FROM Students";
+
+        try (Connection con = getConnection();
+             Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery(query)) {
+
+            System.out.println("\n------ ALL STUDENTS ------");
+
+            boolean found = false;
+            while (rs.next()) {
+                found = true;
+                System.out.println(
+                        "Eno: " + rs.getInt("eno") +
+                                " | Name: " + rs.getString("name") +
+                                " | Branch: " + rs.getString("branch") +
+                                " | Sem: " + rs.getInt("sem") +
+                                " | %: " + rs.getDouble("percentage")
+                );
+            }
+
+            if (!found) {
+                System.out.println("No records found.");
+            }
+
+        } catch (Exception e) {
+            System.out.println("Error displaying students: " + e.getMessage());
+        }
+    }
+    private static void searchStudentByEno(Scanner sc) {
+        try {
+            System.out.print("Enter Eno to search: ");
+            int eno = Integer.parseInt(sc.nextLine());
+
+            String query = "SELECT * FROM Students WHERE eno = ?";
+
+            try (Connection con = getConnection();
+                 PreparedStatement ps = con.prepareStatement(query)) {
+
+                ps.setInt(1, eno);
+                ResultSet rs = ps.executeQuery();
+
+                if (rs.next()) {
+                    System.out.println("\nStudent Found:");
+                    System.out.println("Eno: " + rs.getInt("eno"));
+                    System.out.println("Name: " + rs.getString("name"));
+                    System.out.println("Branch: " + rs.getString("branch"));
+                    System.out.println("Semester: " + rs.getInt("sem"));
+                    System.out.println("Percentage: " + rs.getDouble("percentage"));
+                } else {
+                    System.out.println("No student found with Eno: " + eno);
+                }
+            }
+
+        } catch (NumberFormatException ex) {
+            System.out.println("Invalid Eno. Please enter a number.");
+        } catch (Exception ex) {
+            System.out.println("Error: " + ex.getMessage());
+        }
+    }
+
+    private static void updateStudentBranch(Scanner sc) {
+        try {
+            System.out.print("Enter Eno to update branch: ");
+            int eno = Integer.parseInt(sc.nextLine());
+
+            if (!isEnoExists(eno)) {
+                System.out.println("No student found with Eno: " + eno);
+                return;
+            }
+
+            System.out.print("Enter new Branch: ");
+            String newBranch = sc.nextLine().trim();
+            validateBranch(newBranch);
+
+            String updateQuery = "UPDATE Students SET branch = ? WHERE eno = ?";
+
+            try (Connection con = getConnection();
+                 PreparedStatement ps = con.prepareStatement(updateQuery)) {
+
+                ps.setString(1, newBranch);
+                ps.setInt(2, eno);
+
+                int rows = ps.executeUpdate();
+                if (rows > 0) {
+                    System.out.println("Branch updated successfully!");
+                } else {
+                    System.out.println("Branch update failed.");
+                }
+            }
+
+        } catch (InvalidInputException ex) {
+            System.out.println("Validation Error: " + ex.getMessage());
+        } catch (NumberFormatException ex) {
+            System.out.println("Invalid Eno. Please enter a number.");
+        } catch (Exception ex) {
+            System.out.println("Error: " + ex.getMessage());
+        }
+    }
+    private static void deleteStudentByEno(Scanner sc) {
+        try {
+            System.out.print("Enter Eno to delete: ");
+            int eno = Integer.parseInt(sc.nextLine());
+
+            if (!isEnoExists(eno)) {
+                System.out.println("No student found with Eno: " + eno);
+                return;
+            }
+
+            String deleteQuery = "DELETE FROM Students WHERE eno = ?";
+
+            try (Connection con = getConnection();
+                 PreparedStatement ps = con.prepareStatement(deleteQuery)) {
+
+                ps.setInt(1, eno);
+
+                int rows = ps.executeUpdate();
+                if (rows > 0) {
+                    System.out.println("Student deleted successfully!");
+                } else {
+                    System.out.println("Delete failed.");
+                }
+            }
+
+        } catch (NumberFormatException ex) {
+            System.out.println("Invalid Eno. Please enter a number.");
+        } catch (Exception ex) {
+            System.out.println("Error: " + ex.getMessage());
+        }
+    }
+
+    
+    private static void displaySortedStudents(Scanner sc) {
+        System.out.println("\nSort Students By:");
+        System.out.println("1. Eno (Ascending)");
+        System.out.println("2. Name (Ascending)");
+        System.out.println("3. Percentage (Descending)");
+        System.out.print("Enter choice: ");
+
+        int ch;
+        try {
+            ch = Integer.parseInt(sc.nextLine());
+        } catch (Exception e) {
+            System.out.println("Invalid input.");
+            return;
+        }
+
+        String query;
+
+        if (ch == 1) {
+            query = "SELECT * FROM Students ORDER BY eno ASC";
+        } else if (ch == 2) {
+            query = "SELECT * FROM Students ORDER BY name ASC";
+        } else if (ch == 3) {
+            query = "SELECT * FROM Students ORDER BY percentage DESC";
+        } else {
+            System.out.println("Wrong choice.");
+            return;
+        }
+
+        try (Connection con = getConnection();
+             Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery(query)) {
+
+            System.out.println("\n------ SORTED STUDENTS ------");
+
+            boolean found = false;
+            while (rs.next()) {
+                found = true;
+                System.out.println(
+                        "Eno: " + rs.getInt("eno") +
+                                " | Name: " + rs.getString("name") +
+                                " | Branch: " + rs.getString("branch") +
+                                " | Sem: " + rs.getInt("sem") +
+                                " | %: " + rs.getDouble("percentage")
+                );
+            }
+
+            if (!found) {
+                System.out.println("No records found.");
+            }
+
+        } catch (Exception e) {
+            System.out.println("Error while sorting: " + e.getMessage());
+        }
+    }
+}
+
+
+class InvalidInputException extends Exception {
+    public InvalidInputException(String msg) {
+        super(msg);
+    }
+}
